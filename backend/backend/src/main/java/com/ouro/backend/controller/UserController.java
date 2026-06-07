@@ -136,4 +136,116 @@ public class UserController {
 
         return response;
     }
+
+    // GET WATCHLIST FOR A USER
+    @GetMapping("/{userId}/watchlist")
+    public List<Map<String, Object>> getWatchlist(@PathVariable UUID userId) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return new ArrayList<>();
+        }
+
+        List<Auction> watchlist = user.getWatchlist();
+        List<Map<String, Object>> response = new ArrayList<>();
+
+        for (Auction a : watchlist) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", a.getAuctionId().toString());
+            map.put("title", a.getTitle() != null ? a.getTitle() : "Untitled Auction");
+            map.put("currentBid", a.getCurrentHighBid());
+            map.put("startingBid", a.getCurrentHighBid());
+            map.put("status", a.getStatus() != null ? a.getStatus() : "active");
+            map.put("endTime", a.getEndTime() != null ? a.getEndTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toString() : java.time.LocalDateTime.now().plusDays(7).atZone(java.time.ZoneId.systemDefault()).toInstant().toString());
+            map.put("description", "Direct from PostgreSQL database");
+            map.put("category", "General");
+            map.put("imageUrl", a.getImageUrl() != null ? a.getImageUrl() : "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600");
+            map.put("images", a.getImagesJson());
+            map.put("reported", a.getReported() != null && a.getReported());
+
+            String sellerId = "1";
+            String sellerName = "Unknown Seller";
+            try {
+                if (a.getSeller() != null) {
+                    if (a.getSeller().getUserId() != null) {
+                        sellerId = a.getSeller().getUserId().toString();
+                    }
+                    if (a.getSeller().getEmail() != null) {
+                        sellerName = a.getSeller().getEmail();
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore
+            }
+            map.put("sellerId", sellerId);
+            map.put("sellerName", sellerName);
+            response.add(map);
+        }
+
+        return response;
+    }
+
+    // ADD TO WATCHLIST
+    @PostMapping("/{userId}/watchlist/{auctionId}")
+    public Map<String, Object> addToWatchlist(@PathVariable UUID userId, @PathVariable Long auctionId) {
+        Map<String, Object> response = new HashMap<>();
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            response.put("success", false);
+            response.put("message", "User not found");
+            return response;
+        }
+
+        Auction auction = auctionRepository.findById(auctionId).orElse(null);
+        if (auction == null) {
+            response.put("success", false);
+            response.put("message", "Auction not found");
+            return response;
+        }
+
+        if (user.getWatchlist().contains(auction)) {
+            response.put("success", true);
+            response.put("message", "Auction is already in watchlist");
+            return response;
+        }
+
+        user.getWatchlist().add(auction);
+        userRepository.save(user);
+
+        response.put("success", true);
+        response.put("message", "Auction added to watchlist successfully");
+        return response;
+    }
+
+    // REMOVE FROM WATCHLIST
+    @DeleteMapping("/{userId}/watchlist/{auctionId}")
+    public Map<String, Object> removeFromWatchlist(@PathVariable UUID userId, @PathVariable Long auctionId) {
+        Map<String, Object> response = new HashMap<>();
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            response.put("success", false);
+            response.put("message", "User not found");
+            return response;
+        }
+
+        Auction auction = auctionRepository.findById(auctionId).orElse(null);
+        if (auction == null) {
+            response.put("success", false);
+            response.put("message", "Auction not found");
+            return response;
+        }
+
+        if (!user.getWatchlist().contains(auction)) {
+            response.put("success", true);
+            response.put("message", "Auction is not in watchlist");
+            return response;
+        }
+
+        user.getWatchlist().remove(auction);
+        userRepository.save(user);
+
+        response.put("success", true);
+        response.put("message", "Auction removed from watchlist successfully");
+        return response;
+    }
 }
+

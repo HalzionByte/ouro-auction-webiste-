@@ -9,6 +9,8 @@ import com.ouro.backend.repository.BidRepository;
 import com.ouro.backend.repository.UserRepository;
 import com.ouro.backend.service.AuctionService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -33,6 +35,9 @@ public class AuctionController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private JavaMailSender mailSender;
 
     // CREATE AUCTION - Allows Sellers to list new auctions
     @PostMapping("/create")
@@ -512,6 +517,60 @@ public class AuctionController {
         return response;
     }
 
+    // CANCEL AN AUCTION (SELLER ONLY) — refunds ALL bidders
+    @PutMapping("/{id}/cancel")
+    public Map<String, Object> cancelAuction(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> response = new HashMap<>();
+        Auction auction = auctionService.getAuctionById(id).orElse(null);
+        if (auction == null) {
+            response.put("success", false);
+            response.put("message", "Auction not found.");
+            return response;
+        }
+
+        // Only the seller may cancel
+        String email = null;
+        if (body != null && body.containsKey("email")) {
+            email = (String) body.get("email");
+        }
+        if (email == null) {
+            response.put("success", false);
+            response.put("message", "Authentication required to cancel auction.");
+            return response;
+        }
+
+        User caller = userRepository.findByEmailIgnoreCase(email);
+        if (caller == null) {
+            response.put("success", false);
+            response.put("message", "User not found.");
+            return response;
+        }
+
+        boolean isSeller = auction.getSeller() != null && auction.getSeller().getUserId().equals(caller.getUserId());
+        if (!isSeller) {
+            response.put("success", false);
+            response.put("message", "Only the seller can cancel this auction.");
+            return response;
+        }
+
+        if ("ended".equalsIgnoreCase(auction.getStatus()) || "cancelled".equalsIgnoreCase(auction.getStatus())) {
+            response.put("success", false);
+            response.put("message", "This auction is already closed and cannot be cancelled.");
+            return response;
+        }
+
+        // Mark as cancelled
+        auction.setStatus("cancelled");
+        auctionRepository.save(auction);
+
+        // Refund EVERY bidder their highest bid amount
+        refundAllBidders(auction);
+
+        response.put("success", true);
+        response.put("message", "Auction cancelled. All bids have been fully refunded.");
+        return response;
+    }
+
     // APPROVE AN AUCTION (ADMIN ONLY)
     @PutMapping("/{id}/approve")
     public Map<String, Object> approveAuction(@PathVariable Long id) {
@@ -585,7 +644,44 @@ public class AuctionController {
         }
     }
 
+    // Refund EVERY bidder's highest bid — used on seller cancellation
+    private void refundAllBidders(Auction auction) {
+        List<Bid> bids = bidRepository.findByAuctionOrderByBidIdDesc(auction);
+        if (bids.isEmpty()) {
+            return;
+        }
+
+        // Track each bidder's highest bid amount
+        Map<UUID, Double> maxBids = new HashMap<>();
+        Map<UUID, User> bidderEntities = new HashMap<>();
+
+        for (Bid b : bids) {
+            User bidder = b.getBidder();
+            UUID bidderId = bidder.getUserId();
+            double bidAmount = b.getAmount();
+
+            if (!maxBids.containsKey(bidderId) || bidAmount > maxBids.get(bidderId)) {
+                maxBids.put(bidderId, bidAmount);
+                bidderEntities.put(bidderId, bidder);
+            }
+        }
+
+        // Refund everyone (including whoever had the highest bid)
+        for (Map.Entry<UUID, Double> entry : maxBids.entrySet()) {
+            UUID bidderId = entry.getKey();
+            double refundAmount = entry.getValue();
+            User bidder = bidderEntities.get(bidderId);
+
+            if (bidder.getWallet() != null) {
+                bidder.getWallet().setBalance(bidder.getWallet().getBalance() + refundAmount);
+                userRepository.save(bidder);
+                System.out.println("[cancelAuction] Refunded $" + refundAmount + " to user: " + bidder.getEmail());
+            }
+        }
+    }
+
     private void checkAndExpireAuction(Auction a) {
+
         boolean expired = a.getEndTime() != null && a.getEndTime().isBefore(java.time.LocalDateTime.now());
         if (expired && !"ended".equalsIgnoreCase(a.getStatus())) {
             a.setStatus("ended");
@@ -774,6 +870,36 @@ public class AuctionController {
         }
         auction.setReported(true);
         auctionRepository.save(auction);
+
+        // ── Send alert email to admin ────────────────────────────────
+        try {
+            String auctionId = auction.getAuctionId().toString();
+            String sellerId = (auction.getSeller() != null && auction.getSeller().getUserId() != null)
+                    ? auction.getSeller().getUserId().toString()
+                    : "Unknown";
+            String sellerEmail = (auction.getSeller() != null && auction.getSeller().getEmail() != null)
+                    ? auction.getSeller().getEmail()
+                    : "Unknown";
+
+            SimpleMailMessage mail = new SimpleMailMessage();
+            mail.setTo("admin@gmail.com");
+            mail.setSubject("[Ouro Auction] Auction Reported — ID #" + auctionId);
+            mail.setText(
+                "An auction has been reported and requires your review.\n\n" +
+                "Auction ID  : " + auctionId + "\n" +
+                "Auction Title: " + (auction.getTitle() != null ? auction.getTitle() : "N/A") + "\n" +
+                "Seller ID   : " + sellerId + "\n" +
+                "Seller Email: " + sellerEmail + "\n" +
+                "Reported by : " + email + "\n\n" +
+                "Please log in to the admin dashboard to review this report."
+            );
+            mailSender.send(mail);
+        } catch (Exception ex) {
+            // Log but do not fail the request if email delivery fails
+            System.err.println("[reportAuction] Failed to send admin email: " + ex.getMessage());
+        }
+        // ─────────────────────────────────────────────────────────────
+
         response.put("success", true);
         response.put("message", "Auction reported successfully.");
         return response;

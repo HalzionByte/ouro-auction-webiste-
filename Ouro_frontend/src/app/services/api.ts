@@ -379,6 +379,9 @@ export async function placeBid(auctionId: string, amount: number): Promise<BidRe
   }
 }
 
+let cachedUserPromise: Promise<User> | null = null;
+let cachedUserEmail: string | null = null;
+
 /**
  * GET /api/users/current
  * Get current logged-in user
@@ -386,6 +389,8 @@ export async function placeBid(auctionId: string, amount: number): Promise<BidRe
 export async function fetchCurrentUser(): Promise<User> {
   const email = localStorage.getItem("email");
   if (!email) {
+    cachedUserPromise = null;
+    cachedUserEmail = null;
     return {
       id: 'guest',
       username: 'Guest',
@@ -394,52 +399,61 @@ export async function fetchCurrentUser(): Promise<User> {
     };
   }
 
-  // [ADDED BY ANTIGRAVITY] Fetches active user profile and sets roles/wallets directly from DB
-  try {
-    const response = await fetch(`${SPRING_BOOT_BASE_URL.replace('/api', '')}/auth/profile?email=${encodeURIComponent(email)}`);
-    if (!response.ok) {
-      throw new Error("Failed to fetch user profile");
-    }
-    const data = await response.json();
-    
-    // Save to local storage for quick access
-    if (data.role) {
-      localStorage.setItem("role", data.role);
-    }
-    if (data.name) {
-      localStorage.setItem("name", data.name);
-    }
-
-    return {
-      id: data.userId || 'currentUser',
-      username: data.name || data.email || 'You',
-      email: data.email,
-      name: data.name || 'Anonymous User',
-      role: data.role || 'USER',
-      wallet: data.wallet ? {
-        walletId: data.wallet.walletId,
-        balance: data.wallet.balance
-      } : undefined,
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.email}`
-    };
-  } catch (error) {
-    console.error("Could not fetch actual user profile, using local storage cache", error);
-    const cachedRole = localStorage.getItem("role") || "USER";
-    const cachedName = localStorage.getItem("name") || email.split('@')[0];
-    return {
-      id: 'currentUser',
-      username: cachedName,
-      email: email,
-      name: cachedName,
-      role: cachedRole,
-      wallet: {
-        walletId: 101,
-        balance: 10000.0
-      },
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
-    };
+  if (cachedUserPromise && cachedUserEmail === email) {
+    return cachedUserPromise;
   }
+
+  cachedUserEmail = email;
+  cachedUserPromise = (async () => {
+    try {
+      const response = await fetch(`${SPRING_BOOT_BASE_URL.replace('/api', '')}/auth/profile?email=${encodeURIComponent(email)}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch user profile");
+      }
+      const data = await response.json();
+      
+      // Save to local storage for quick access
+      if (data.role) {
+        localStorage.setItem("role", data.role);
+      }
+      if (data.name) {
+        localStorage.setItem("name", data.name);
+      }
+
+      return {
+        id: data.userId || 'currentUser',
+        username: data.name || data.email || 'You',
+        email: data.email,
+        name: data.name || 'Anonymous User',
+        role: data.role || 'USER',
+        wallet: data.wallet ? {
+          walletId: data.wallet.walletId,
+          balance: data.wallet.balance
+        } : undefined,
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.email}`
+      };
+    } catch (error) {
+      console.error("Could not fetch actual user profile, using local storage cache", error);
+      const cachedRole = localStorage.getItem("role") || "USER";
+      const cachedName = localStorage.getItem("name") || email.split('@')[0];
+      return {
+        id: 'currentUser',
+        username: cachedName,
+        email: email,
+        name: cachedName,
+        role: cachedRole,
+        wallet: {
+          walletId: 101,
+          balance: 10000.0
+        },
+        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`
+      };
+    }
+  })();
+
+  return cachedUserPromise;
 }
+
 
 /**
  * PUT /auth/update-role
@@ -579,6 +593,24 @@ export async function closeAuction(auctionId: string): Promise<any> {
     throw new Error(errorData?.message || 'Failed to close auction');
   }
   return await response.json();
+}
+
+/**
+ * PUT /api/auctions/:id/cancel
+ * Cancel an auction (Seller only) — refunds ALL bidders
+ */
+export async function cancelAuction(auctionId: string): Promise<any> {
+  const email = localStorage.getItem("email");
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/cancel`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to cancel auction');
+  }
+  return data;
 }
 
 /**
@@ -774,3 +806,72 @@ export async function fetchReportedAuctions(): Promise<Auction[]> {
     return [];
   }
 }
+
+let cachedWatchlistPromise: Promise<Auction[]> | null = null;
+let cachedWatchlistUserId: string | null = null;
+
+/**
+ * GET /api/users/:userId/watchlist
+ * Fetch user's watchlist
+ */
+export async function fetchWatchlist(userId: string): Promise<Auction[]> {
+  if (cachedWatchlistPromise && cachedWatchlistUserId === userId) {
+    return cachedWatchlistPromise;
+  }
+
+  cachedWatchlistUserId = userId;
+  cachedWatchlistPromise = (async () => {
+    try {
+      const response = await fetch(`${SPRING_BOOT_BASE_URL}/users/${userId}/watchlist`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch watchlist');
+      }
+      const data = await response.json();
+      return data.map((item: any) => ({
+        ...item,
+        id: String(item.id || item.auctionId),
+        images: parseImages(item.images, item.imageUrl)
+      }));
+    } catch (error) {
+      console.error(`Could not connect to Spring Boot to fetch watchlist.`, error);
+      return [];
+    }
+  })();
+
+  return cachedWatchlistPromise;
+}
+
+/**
+ * POST /api/users/:userId/watchlist/:auctionId
+ * Add auction to watchlist
+ */
+export async function addToWatchlist(userId: string, auctionId: string): Promise<any> {
+  cachedWatchlistPromise = null; // Invalidate cache
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/users/${userId}/watchlist/${auctionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to add to watchlist');
+  }
+  return data;
+}
+
+/**
+ * DELETE /api/users/:userId/watchlist/:auctionId
+ * Remove auction from watchlist
+ */
+export async function removeFromWatchlist(userId: string, auctionId: string): Promise<any> {
+  cachedWatchlistPromise = null; // Invalidate cache
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/users/${userId}/watchlist/${auctionId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.message || 'Failed to remove from watchlist');
+  }
+  return data;
+}
+
