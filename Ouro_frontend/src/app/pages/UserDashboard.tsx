@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 // [ADDED BY ANTIGRAVITY] Imported fetchUserSelling helper function to query active listings from database
-import { fetchUserBids, fetchWonAuctions, fetchUserSelling, fetchCurrentUser, fetchAuctionById, User, Bid, Auction } from '../services/api';
+import { fetchUserBids, fetchWonAuctions, fetchUserSelling, fetchCurrentUser, fetchAuctionById, fetchWatchlist, User, Bid, Auction } from '../services/api';
 import { CountdownTimer } from '../components/CountdownTimer';
-// [ADDED BY ANTIGRAVITY] Imported ShoppingBag for selling listings representation
-import { Trophy, TrendingUp, AlertCircle, ShoppingBag } from 'lucide-react';
+// [ADDED BY ANTIGRAVITY] Imported ShoppingBag and Heart for listings representation
+import { Trophy, TrendingUp, AlertCircle, ShoppingBag, Heart } from 'lucide-react';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -23,7 +23,8 @@ export function UserDashboard() {
   const [wonAuctions, setWonAuctions] = useState<Auction[]>([]);
   // [ADDED BY ANTIGRAVITY] Local state for user listings and tab filtering
   const [sellingAuctions, setSellingAuctions] = useState<Auction[]>([]);
-  const [activeTab, setActiveTab] = useState<'bids' | 'won' | 'selling'>('bids');
+  const [watchlistAuctions, setWatchlistAuctions] = useState<Auction[]>([]);
+  const [activeTab, setActiveTab] = useState<'bids' | 'won' | 'selling' | 'watchlist'>('bids');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,16 +37,18 @@ export function UserDashboard() {
       const userData = await fetchCurrentUser();
       setCurrentUser(userData);
 
-      // [ADDED BY ANTIGRAVITY] Concurrently fetch bids, won auctions, and selling listings from database
-      const [bidsData, wonData, sellingData] = await Promise.all([
+      // [ADDED BY ANTIGRAVITY] Concurrently fetch bids, won auctions, selling listings, and watchlist from database
+      const [bidsData, wonData, sellingData, watchlistData] = await Promise.all([
         fetchUserBids(userData.id),
         fetchWonAuctions(userData.id),
         fetchUserSelling(userData.id),
+        fetchWatchlist(userData.id),
       ]);
 
       setUserBids(bidsData);
       setWonAuctions(wonData);
       setSellingAuctions(sellingData);
+      setWatchlistAuctions(watchlistData);
 
       const auctionIds = [...new Set(bidsData.map((bid) => bid.auctionId))];
 
@@ -102,8 +105,8 @@ export function UserDashboard() {
       </motion.div>
 
       {/* Stats Cards */}
-      {/* [ADDED BY ANTIGRAVITY] Updated stats cards layout to support 4 columns for bids, wins, and selling listings */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      {/* [ADDED BY ANTIGRAVITY] Updated stats cards layout to support 5 columns for bids, wins, selling listings, and watchlist */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
         {[
           {
             label: 'Active Bids',
@@ -129,6 +132,12 @@ export function UserDashboard() {
             value: sellingAuctions.length,
             icon: <ShoppingBag className="w-10 h-10 text-accent opacity-20" />,
             color: 'text-accent',
+          },
+          {
+            label: 'Watchlist',
+            value: watchlistAuctions.length,
+            icon: <Heart className="w-10 h-10 text-rose-500 opacity-20" />,
+            color: 'text-rose-500',
           },
         ].map((stat, i) => (
           <motion.div
@@ -200,6 +209,22 @@ export function UserDashboard() {
           >
             Your Listings ({sellingAuctions.length})
             {activeTab === 'selling' && (
+              <motion.div
+                layoutId="dashboard-tab-line"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('watchlist')}
+            className={`flex-1 py-4 px-6 font-semibold transition-all relative cursor-pointer ${
+              activeTab === 'watchlist' ? 'text-primary bg-secondary/50' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Watchlist ({watchlistAuctions.length})
+            {activeTab === 'watchlist' && (
               <motion.div
                 layoutId="dashboard-tab-line"
                 className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
@@ -359,6 +384,67 @@ export function UserDashboard() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {sellingAuctions.map((auction, index) => (
+                      <motion.div
+                        key={auction.id}
+                        initial={{ opacity: 0, y: 24 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: index * 0.08, ease: 'easeOut' }}
+                        whileHover={{ y: -4, boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}
+                        className="bg-card border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col"
+                      >
+                        <img
+                          src={auction.imageUrl || "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600"}
+                          alt={auction.title}
+                          className="w-full h-40 object-cover"
+                        />
+                        <div className="p-4 flex-1 flex flex-col justify-between space-y-4">
+                          <div>
+                            <h3 className="font-semibold text-foreground mb-1.5 truncate">{auction.title}</h3>
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">
+                              {auction.status || 'Active'}
+                            </span>
+                          </div>
+                          <div className="border-t border-border pt-3 flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Current Bid:</span>
+                            <span className="font-semibold text-primary">
+                              ${auction.currentBid.toLocaleString()}
+                            </span>
+                          </div>
+                          <Link
+                            to={`/auction/${auction.id}`}
+                            className="bg-secondary text-secondary-foreground text-center py-2.5 rounded-lg font-medium hover:bg-secondary/80 transition-colors text-sm w-full block shadow-sm border border-border"
+                          >
+                            View Listing Details
+                          </Link>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Watchlist Tab */}
+            {activeTab === 'watchlist' && (
+              <motion.div
+                key="watchlist-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-4"
+              >
+                {watchlistAuctions.length === 0 ? (
+                  <div className="text-center py-10">
+                    <Heart className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-55 animate-pulse text-rose-500" />
+                    <p className="text-muted-foreground">Your watchlist is empty.</p>
+                    <Link to="/" className="text-primary hover:underline mt-2 inline-block font-semibold">
+                      Browse Active Auctions
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {watchlistAuctions.map((auction, index) => (
                       <motion.div
                         key={auction.id}
                         initial={{ opacity: 0, y: 24 }}
