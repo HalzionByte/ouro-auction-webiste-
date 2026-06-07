@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchAuctionById, fetchBidHistory, placeBid, fetchCurrentUser, Auction, Bid, User } from '../services/api';
+import { fetchAuctionById, fetchBidHistory, placeBid, fetchCurrentUser, approveAuction, deleteAuction, reportBid, reportAuction, closeAuction, Auction, Bid, User } from '../services/api';
 import { CountdownTimer } from '../components/CountdownTimer';
 import { BidHistory } from '../components/BidHistory';
-import { ArrowLeft, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { ArrowLeft, AlertCircle, CheckCircle, Clock, Flag } from 'lucide-react';
 
 export function AuctionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +17,7 @@ export function AuctionDetailPage() {
   const [loading, setLoading] = useState(false);
   // [ADDED BY ANTIGRAVITY] Local state to dynamically track if bidding is closed for this auction
   const [isEnded, setIsEnded] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
     if (id) {
@@ -135,6 +136,196 @@ export function AuctionDetailPage() {
     );
   }
 
+  // Prevent normal users from accessing pending auctions
+  if (auction.status === 'pending' && currentUser?.role !== 'ADMIN') {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="text-center py-20 bg-destructive/5 border border-destructive/10 rounded-2xl p-8"
+        >
+          <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
+          <p className="text-foreground text-lg font-semibold">Access Denied</p>
+          <p className="text-muted-foreground text-sm mt-1">This auction listing is currently pending administrative review.</p>
+          <Link to="/" className="text-primary hover:underline mt-6 inline-block font-medium">
+            Return to Homepage
+          </Link>
+        </motion.div>
+      </div>
+    );
+  }
+
+  const handleApproveAuction = async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const res = await approveAuction(id);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          message: res.message || 'Auction approved successfully!',
+        });
+        await loadAuctionData();
+      } else {
+        setNotification({
+          type: 'error',
+          message: res.message || 'Failed to approve auction',
+        });
+      }
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to approve auction. Please try again.',
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const handleRemoveAuction = async () => {
+    if (!id) return;
+    if (!window.confirm("Are you sure you want to reject and delete this pending auction?")) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await deleteAuction(id);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          message: res.message || 'Auction removed successfully!',
+        });
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1500);
+      } else {
+        setNotification({
+          type: 'error',
+          message: res.message || 'Failed to delete auction',
+        });
+      }
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to delete auction. Please try again.',
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const handleEndAuction = async () => {
+    if (!id) return;
+    if (!window.confirm("Are you sure you want to end this auction early? This action cannot be undone and will finalize the highest bidder as the winner.")) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await closeAuction(id);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          message: res.message || 'Auction ended successfully!',
+        });
+        await loadAuctionData();
+      } else {
+        setNotification({
+          type: 'error',
+          message: res.message || 'Failed to end auction',
+        });
+      }
+    } catch (error: any) {
+      setNotification({
+        type: 'error',
+        message: error.message || 'Failed to end auction. Please try again.',
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const handleReportBid = async (bidId: string) => {
+    if (!currentUser || !currentUser.email) {
+      setNotification({
+        type: 'error',
+        message: 'Please login first to report a bid.',
+      });
+      return;
+    }
+
+    try {
+      const response = await reportBid(bidId, currentUser.email);
+      if (response.success) {
+        setNotification({
+          type: 'success',
+          message: response.message || 'Bid reported successfully.',
+        });
+        await loadAuctionData();
+      } else {
+        setNotification({
+          type: 'error',
+          message: response.message || 'Failed to report bid.',
+        });
+      }
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to report bid. Please try again.',
+      });
+    } finally {
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const handleReportAuction = async () => {
+    if (!currentUser || !currentUser.email) {
+      setNotification({
+        type: 'error',
+        message: 'Please login first to report this auction.',
+      });
+      return;
+    }
+
+    if (!id) return;
+
+    if (!window.confirm("Are you sure you want to report this auction for violations?")) {
+      return;
+    }
+
+    try {
+      const response = await reportAuction(id, currentUser.email);
+      if (response.success) {
+        setNotification({
+          type: 'success',
+          message: response.message || 'Auction reported successfully.',
+        });
+        await loadAuctionData();
+      } else {
+        setNotification({
+          type: 'error',
+          message: response.message || 'Failed to report auction.',
+        });
+      }
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        message: 'Failed to report auction. Please try again.',
+      });
+    } finally {
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const isOwner = currentUser && (
+    (currentUser.id && auction.sellerId && currentUser.id === auction.sellerId) ||
+    (currentUser.email && auction.sellerName && currentUser.email.toLowerCase() === auction.sellerName.toLowerCase())
+  );
+
   const isHighestBidder = bids.length > 0 && bids[0].userId === currentUser?.id;
   const hasBeenOutbid = bids.some((bid) => bid.userId === currentUser?.id) && !isHighestBidder;
 
@@ -215,15 +406,36 @@ export function AuctionDetailPage() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        {/* Left: Image */}
+        {/* Left: Image & Gallery */}
         <motion.div
           initial={{ opacity: 0, x: -24 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="space-y-4"
         >
-          <div className="bg-secondary rounded-xl overflow-hidden shadow-lg">
-            <img src={auction.imageUrl} alt={auction.title} className="w-full h-auto" />
+          <div className="bg-secondary rounded-xl overflow-hidden shadow-lg aspect-[4/3] flex items-center justify-center">
+            <img 
+              src={auction.images && auction.images[activeImageIndex] ? auction.images[activeImageIndex] : auction.imageUrl} 
+              alt={auction.title} 
+              className="w-full h-full object-cover" 
+            />
           </div>
+          
+          {auction.images && auction.images.length > 1 && (
+            <div className="flex gap-2.5 overflow-x-auto pb-2">
+              {auction.images.map((img, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveImageIndex(idx)}
+                  className={`w-20 h-20 rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer ${
+                    activeImageIndex === idx ? 'border-primary scale-95 shadow-md' : 'border-border opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <img src={img} alt={`${auction.title} thumb ${idx}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* Right: Bidding Info */}
@@ -234,8 +446,27 @@ export function AuctionDetailPage() {
           className="space-y-6"
         >
           <div>
-            <div className="text-sm text-muted-foreground mb-1">{auction.category}</div>
-            <h1 className="text-3xl font-bold text-foreground mb-4">{auction.title}</h1>
+            <div className="flex justify-between items-start">
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">{auction.category}</div>
+              <h1 className="text-3xl font-bold text-foreground mb-4">{auction.title}</h1>
+            </div>
+            {/* Show report button to anyone EXCEPT the seller of this auction */}
+            {currentUser && currentUser.id !== auction.sellerId && (
+              <button
+                onClick={handleReportAuction}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                  auction.reported
+                    ? 'bg-destructive/10 text-destructive border-destructive/20 cursor-not-allowed'
+                    : 'bg-secondary text-muted-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/25'
+                }`}
+                disabled={auction.reported}
+              >
+                <Flag className="w-3.5 h-3.5" />
+                <span>{auction.reported ? 'Reported' : 'Report Listing'}</span>
+              </button>
+            )}
+          </div>
 
             <div className="bg-secondary rounded-xl p-6 space-y-4">
               {/* Current Bid — animates when value changes */}
@@ -263,12 +494,60 @@ export function AuctionDetailPage() {
 
               {/* Bid Input */}
               <div className="pt-4 border-t border-border">
-                {/* [ADDED BY ANTIGRAVITY] Render ended banner if expired, hiding input fields and buttons */}
-                {isEnded ? (
+                {auction.status === 'pending' ? (
+                  currentUser?.role === 'ADMIN' ? (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-3">
+                      <AlertCircle className="w-6 h-6 text-amber-500" />
+                      <p className="font-semibold text-amber-500 text-sm">Pending Administrative Review</p>
+                      <p className="text-xs text-muted-foreground mb-1">Please inspect this listing details and choose an action:</p>
+                      <div className="flex gap-2 w-full">
+                        <button
+                          onClick={handleApproveAuction}
+                          disabled={loading}
+                          className="flex-1 bg-accent text-accent-foreground py-2.5 rounded-lg font-medium hover:bg-accent/90 transition-colors shadow-sm text-sm cursor-pointer"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={handleRemoveAuction}
+                          disabled={loading}
+                          className="flex-1 bg-destructive text-destructive-foreground py-2.5 rounded-lg font-medium hover:bg-destructive/90 transition-colors shadow-sm text-sm cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-destructive/15 border border-destructive/20 rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-2">
+                      <AlertCircle className="w-6 h-6 text-destructive" />
+                      <p className="font-semibold text-destructive text-sm">Access Denied</p>
+                      <p className="text-xs text-muted-foreground">This auction is not yet active.</p>
+                    </div>
+                  )
+                ) : isEnded ? (
                   <div className="p-4 bg-destructive/15 border border-destructive/20 rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-6 h-6 text-destructive animate-pulse" />
                     <p className="font-semibold text-destructive text-sm">Bidding is Closed</p>
                     <p className="text-xs text-muted-foreground">This auction's duration has ended and no further bids are accepted.</p>
+                  </div>
+                ) : isOwner ? (
+                  <div className="p-4 bg-secondary/35 border border-border rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-3">
+                    <Clock className="w-6 h-6 text-primary animate-pulse" />
+                    <p className="font-semibold text-foreground text-sm">You are the seller of this auction</p>
+                    <p className="text-xs text-muted-foreground mb-1">As the seller, you cannot bid on this item. You can choose to end this auction early.</p>
+                    <button
+                      onClick={handleEndAuction}
+                      disabled={loading}
+                      className="w-full bg-accent text-accent-foreground py-2.5 rounded-lg font-medium hover:bg-accent/90 transition-colors shadow-sm text-sm cursor-pointer"
+                    >
+                      {loading ? 'Ending Auction...' : 'End Auction Early'}
+                    </button>
+                  </div>
+                ) : currentUser?.role === 'ADMIN' ? (
+                  <div className="p-4 bg-destructive/15 border border-destructive/20 rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-destructive" />
+                    <p className="font-semibold text-destructive text-sm">Bidding Restricted</p>
+                    <p className="text-xs text-muted-foreground">Administrators are not permitted to place bids on auctions.</p>
                   </div>
                 ) : localStorage.getItem("loggedIn") !== "true" ? (
                   <div className="text-center py-4 space-y-3">
@@ -415,7 +694,7 @@ export function AuctionDetailPage() {
             {activeTab === 'description' ? (
               <p className="text-foreground leading-relaxed">{auction.description}</p>
             ) : (
-              <BidHistory bids={bids} currentUserId={currentUser?.id} />
+              <BidHistory bids={bids} currentUserId={currentUser?.id} auctionSellerId={auction.sellerId} onReport={handleReportBid} />
             )}
           </motion.div>
         </AnimatePresence>

@@ -92,7 +92,8 @@ public class UserController {
                         map.put("title", a.getTitle() != null ? a.getTitle() : "Untitled Auction");
                         map.put("currentBid", a.getCurrentHighBid());
                         map.put("description", "Won Auction");
-                        map.put("imageUrl", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600");
+                        map.put("imageUrl", a.getImageUrl() != null ? a.getImageUrl() : "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600");
+                        map.put("images", a.getImagesJson());
                         map.put("category", "General");
                         response.add(map);
                         processedAuctions.add(a.getAuctionId());
@@ -123,10 +124,11 @@ public class UserController {
             map.put("currentBid", a.getCurrentHighBid());
             map.put("startingBid", a.getCurrentHighBid());
             map.put("status", a.getStatus() != null ? a.getStatus() : "active");
-            map.put("endTime", a.getEndTime() != null ? a.getEndTime().toString() : java.time.LocalDateTime.now().plusDays(7).toString());
+            map.put("endTime", a.getEndTime() != null ? a.getEndTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toString() : java.time.LocalDateTime.now().plusDays(7).atZone(java.time.ZoneId.systemDefault()).toInstant().toString());
             map.put("description", "Listing created by you");
             map.put("category", "General");
-            map.put("imageUrl", "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600");
+            map.put("imageUrl", a.getImageUrl() != null ? a.getImageUrl() : "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600");
+            map.put("images", a.getImagesJson());
             map.put("sellerId", user.getUserId().toString());
             map.put("sellerName", user.getEmail());
             response.add(map);

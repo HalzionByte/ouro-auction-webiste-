@@ -231,7 +231,9 @@ export function CreateAuctionPage() {
           description: formData.description,
           startingBid: formData.startingBid,
           endTime: new Date(formData.endDateTime).toISOString(),
-          email: localStorage.getItem("email")
+          email: localStorage.getItem("email"),
+          imageUrl: imagePreviews[0] || "",
+          images: JSON.stringify(imagePreviews)
         };
         
         await createAuction(payload);

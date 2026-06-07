@@ -22,7 +22,17 @@ public class Bid {
 
     private java.time.LocalDateTime timestamp = java.time.LocalDateTime.now();
 
+    private Boolean reported = false;
+
     public Bid() {
+    }
+
+    public boolean isReported() {
+        return reported != null && reported;
+    }
+
+    public void setReported(Boolean reported) {
+        this.reported = reported;
     }
 
     public java.time.LocalDateTime getTimestamp() {

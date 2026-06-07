@@ -5,6 +5,8 @@ import com.ouro.backend.service.UserService;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping("/auth")
@@ -17,6 +19,9 @@ public class AuthController {
     // REGISTER
     @PostMapping("/register")
     public User register(@RequestBody User user) {
+        if (user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole().trim())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Registration as ADMIN is not allowed.");
+        }
         return userService.register(user);
     }
 
@@ -50,6 +55,12 @@ public class AuthController {
         String role = payload.get("role");
         User user = userService.findByEmail(email);
         if (user != null) {
+            if ("ADMIN".equalsIgnoreCase(user.getRole())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Administrators cannot change their role.");
+            }
+            if (role != null && "ADMIN".equalsIgnoreCase(role.trim())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot update role to ADMIN.");
+            }
             user.setRole(role);
             return userService.register(user);
         }

@@ -131,6 +131,15 @@ export function Navbar({ onSearchChange }: NavbarProps) {
                   My Bids
                 </Link>
 
+                {user?.role === "ADMIN" && (
+                  <Link
+                    to="/admin"
+                    className="px-3 py-2 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent-foreground hover:text-accent font-semibold transition-colors text-sm border border-accent/30"
+                  >
+                    Admin Panel
+                  </Link>
+                )}
+
                 {user?.role === "SELLER" && (
                   <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
                     <Link

@@ -25,6 +25,14 @@ public class Auction {
     @JoinColumn(name = "seller_id")
     private User seller;
 
+    @Column(name = "image_url", columnDefinition = "TEXT")
+    private String imageUrl;
+
+    @Column(name = "images_json", columnDefinition = "TEXT")
+    private String imagesJson;
+
+    private Boolean reported = false;
+
 
     
 
@@ -77,5 +85,29 @@ public class Auction {
 
     public void setEndTime(LocalDateTime endTime) {
     this.endTime = endTime;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
+
+    public String getImagesJson() {
+        return imagesJson;
+    }
+
+    public void setImagesJson(String imagesJson) {
+        this.imagesJson = imagesJson;
+    }
+
+    public Boolean getReported() {
+        return reported != null && reported;
+    }
+
+    public void setReported(Boolean reported) {
+        this.reported = reported;
     }
 }

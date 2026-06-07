@@ -112,7 +112,7 @@ export function ProfilePage() {
 
                         <h2 className="text-xl font-bold text-foreground truncate max-w-full">{user.name}</h2>
                         <span className="text-xs font-semibold px-2.5 py-1 rounded-full mt-2 inline-block bg-primary/10 text-primary uppercase tracking-wider">
-                            {user.role === 'SELLER' ? 'Seller Account' : 'Buyer / Bidder'}
+                            {user.role === 'ADMIN' ? 'Admin Account' : user.role === 'SELLER' ? 'Seller Account' : 'Buyer / Bidder'}
                         </span>
                     </div>
 
@@ -154,101 +154,105 @@ export function ProfilePage() {
                         </div>
 
                         {/* Wallet Information */}
-                        <div className="bg-primary/5 border border-primary/10 rounded-xl p-5 mt-4">
-                            <h4 className="font-semibold text-foreground flex items-center space-x-2 mb-3">
-                                <Wallet className="w-5 h-5 text-accent" />
-                                <span>Ouro Wallet Integration</span>
-                            </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-medium text-muted-foreground">Wallet ID</label>
-                                    <p className="font-mono text-sm text-foreground bg-background p-2 rounded border border-border truncate mt-1">
-                                        {user.wallet?.walletId ? `W-${user.wallet.walletId}` : 'Not Assigned'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-muted-foreground">Current Balance</label>
-                                    <p className="text-xl font-bold text-primary p-2 rounded bg-background border border-border mt-1">
-                                        ${user.wallet?.balance ? user.wallet.balance.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
-                                    </p>
+                        {user.role !== 'ADMIN' && (
+                            <div className="bg-primary/5 border border-primary/10 rounded-xl p-5 mt-4">
+                                <h4 className="font-semibold text-foreground flex items-center space-x-2 mb-3">
+                                    <Wallet className="w-5 h-5 text-accent" />
+                                    <span>Ouro Wallet Integration</span>
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground">Wallet ID</label>
+                                        <p className="font-mono text-sm text-foreground bg-background p-2 rounded border border-border truncate mt-1">
+                                            {user.wallet?.walletId ? `W-${user.wallet.walletId}` : 'Not Assigned'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-medium text-muted-foreground">Current Balance</label>
+                                        <p className="text-xl font-bold text-primary p-2 rounded bg-background border border-border mt-1">
+                                            ${user.wallet?.balance ? user.wallet.balance.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </motion.div>
 
                     {/* Change Role Card */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, delay: 0.2 }}
-                        className="bg-card border border-border rounded-2xl p-6 shadow-lg space-y-6"
-                    >
-                        <h3 className="text-lg font-bold text-foreground border-b border-border pb-3 flex items-center space-x-2">
-                            <Shield className="w-5 h-5 text-accent" />
-                            <span>Role Management</span>
-                        </h3>
+                    {user.role !== 'ADMIN' && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.5, delay: 0.2 }}
+                            className="bg-card border border-border rounded-2xl p-6 shadow-lg space-y-6"
+                        >
+                            <h3 className="text-lg font-bold text-foreground border-b border-border pb-3 flex items-center space-x-2">
+                                <Shield className="w-5 h-5 text-accent" />
+                                <span>Role Management</span>
+                            </h3>
 
-                        <p className="text-sm text-muted-foreground">
-                            You can switch your role below. Sellers can list new items, whereas Buyers can place bids. Switching roles will immediately update your privileges.
-                        </p>
+                            <p className="text-sm text-muted-foreground">
+                                You can switch your role below. Sellers can list new items, whereas Buyers can place bids. Switching roles will immediately update your privileges.
+                            </p>
 
-                        {successMessage && (
-                            <div className="p-3 bg-accent/10 border border-accent/20 text-accent rounded-lg text-sm flex items-center space-x-2">
-                                <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                                <span>{successMessage}</span>
+                            {successMessage && (
+                                <div className="p-3 bg-accent/10 border border-accent/20 text-accent rounded-lg text-sm flex items-center space-x-2">
+                                    <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                                    <span>{successMessage}</span>
+                                </div>
+                            )}
+
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-semibold text-foreground">Select Active Role</label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => setSelectedRole('USER')}
+                                        className={`p-4 rounded-xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
+                                            selectedRole === 'USER'
+                                                ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                                                : 'border-border bg-background text-muted-foreground hover:bg-secondary/20'
+                                        }`}
+                                    >
+                                        <UserIcon className="w-6 h-6" />
+                                        <span className="font-semibold text-sm">Buyer / Bidder</span>
+                                        <span className="text-[10px] opacity-75">Participate in auctions</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => setSelectedRole('SELLER')}
+                                        className={`p-4 rounded-xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
+                                            selectedRole === 'SELLER'
+                                                ? 'border-accent bg-accent/5 text-accent shadow-sm'
+                                                : 'border-border bg-background text-muted-foreground hover:bg-secondary/20'
+                                        }`}
+                                    >
+                                        <Shield className="w-6 h-6" />
+                                        <span className="font-semibold text-sm">Seller</span>
+                                        <span className="text-[10px] opacity-75">Create &amp; manage listings</span>
+                                    </button>
+                                </div>
                             </div>
-                        )}
 
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-semibold text-foreground">Select Active Role</label>
-                            <div className="grid grid-cols-2 gap-4">
-                                <button
-                                    onClick={() => setSelectedRole('USER')}
-                                    className={`p-4 rounded-xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                                        selectedRole === 'USER'
-                                            ? 'border-primary bg-primary/5 text-primary shadow-sm'
-                                            : 'border-border bg-background text-muted-foreground hover:bg-secondary/20'
-                                    }`}
+                            {selectedRole !== user.role && (
+                                <motion.button
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    onClick={handleRoleChange}
+                                    disabled={updating}
+                                    className="w-full bg-primary text-primary-foreground p-3 rounded-lg font-medium hover:bg-primary/95 transition-all shadow-md flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
                                 >
-                                    <UserIcon className="w-6 h-6" />
-                                    <span className="font-semibold text-sm">Buyer / Bidder</span>
-                                    <span className="text-[10px] opacity-75">Participate in auctions</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setSelectedRole('SELLER')}
-                                    className={`p-4 rounded-xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                                        selectedRole === 'SELLER'
-                                            ? 'border-accent bg-accent/5 text-accent shadow-sm'
-                                            : 'border-border bg-background text-muted-foreground hover:bg-secondary/20'
-                                    }`}
-                                >
-                                    <Shield className="w-6 h-6" />
-                                    <span className="font-semibold text-sm">Seller</span>
-                                    <span className="text-[10px] opacity-75">Create &amp; manage listings</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {selectedRole !== user.role && (
-                            <motion.button
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                onClick={handleRoleChange}
-                                disabled={updating}
-                                className="w-full bg-primary text-primary-foreground p-3 rounded-lg font-medium hover:bg-primary/95 transition-all shadow-md flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
-                            >
-                                {updating ? (
-                                    <>
-                                        <RefreshCw className="w-4 h-4 animate-spin" />
-                                        <span>Saving Changes...</span>
-                                    </>
-                                ) : (
-                                    <span>Update Active Role</span>
-                                )}
-                            </motion.button>
-                        )}
-                    </motion.div>
+                                    {updating ? (
+                                        <>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
+                                            <span>Saving Changes...</span>
+                                        </>
+                                    ) : (
+                                        <span>Update Active Role</span>
+                                    )}
+                                </motion.button>
+                            )}
+                        </motion.div>
+                    )}
                 </div>
             </div>
         </div>

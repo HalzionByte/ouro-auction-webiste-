@@ -10,4 +10,6 @@ public interface AuctionRepository
 
     // Find auctions created by a specific seller ordered by newest
     java.util.List<Auction> findBySellerOrderByAuctionIdDesc(com.ouro.backend.entity.User seller);
+
+    java.util.List<Auction> findByReportedTrue();
 }

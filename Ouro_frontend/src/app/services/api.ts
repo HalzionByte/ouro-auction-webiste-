@@ -12,14 +12,15 @@ export interface Auction {
   title: string;
   description: string;
   imageUrl: string;
+  images?: string[];
   currentBid: number;
   startingBid: number;
   endTime: string; // ISO timestamp
   category: string;
   sellerId: string;
   sellerName: string;
-  status: 'active' | 'ended' | 'cancelled';
-  
+  status: 'active' | 'ended' | 'cancelled' | 'pending';
+  reported?: boolean;
 }
 
 export interface Bid {
@@ -29,6 +30,7 @@ export interface Bid {
   username: string;
   amount: number;
   timestamp: string;
+  reported?: boolean;
 }
 
 export interface User {
@@ -165,6 +167,21 @@ const currentUser: User = {
 // @ts-ignore
 const SPRING_BOOT_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
+function parseImages(imagesJson: any, fallbackUrl: string): string[] {
+  if (!imagesJson) {
+    return [fallbackUrl || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600'];
+  }
+  try {
+    const parsed = typeof imagesJson === 'string' ? JSON.parse(imagesJson) : imagesJson;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return [fallbackUrl || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600'];
+}
+
 /**
  * GET /api/auctions
  * Fetch all active auctions with optional filters from Spring Boot
@@ -187,7 +204,12 @@ export async function fetchAuctions(filters?: any): Promise<Auction[]> {
       console.warn("Backend returned an error. Is Spring Boot running?");
       throw new Error('Failed to fetch auctions from the backend');
     }
-    return await response.json(); 
+    const data = await response.json();
+    return data.map((item: any) => ({
+      ...item,
+      id: String(item.id || item.auctionId),
+      images: parseImages(item.images, item.imageUrl)
+    })); 
   } catch (error) {
     console.error("Could not connect to Spring Boot. Falling back to mock data for now.", error);
     
@@ -204,6 +226,37 @@ export async function fetchAuctions(filters?: any): Promise<Auction[]> {
     else if (filters?.sortBy === 'priceLow') filtered.sort((a, b) => a.currentBid - b.currentBid);
     else if (filters?.sortBy === 'priceHigh') filtered.sort((a, b) => b.currentBid - a.currentBid);
     return filtered;
+  }
+}
+
+/**
+ * GET /api/auctions/all
+ * Fetch all auctions (including pending/ended) for the Admin Dashboard
+ */
+export async function fetchAdminAuctions(): Promise<Auction[]> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/all`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch admin auctions');
+    }
+    const data = await response.json();
+    return data.map((item: any) => ({
+      id: String(item.id || item.auctionId),
+      title: item.title || 'Untitled Auction',
+      description: item.description || 'Direct from PostgreSQL database',
+      imageUrl: item.imageUrl || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600',
+      images: parseImages(item.images, item.imageUrl),
+      currentBid: typeof item.currentBid === 'number' ? item.currentBid : (item.currentHighBid || 0),
+      startingBid: typeof item.startingBid === 'number' ? item.startingBid : (item.currentHighBid || 0),
+      endTime: item.endTime || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      category: item.category || 'General',
+      sellerId: item.sellerId || '1',
+      sellerName: item.sellerName || 'Unknown Seller',
+      status: item.status || 'active',
+    }));
+  } catch (error) {
+    console.error("Could not fetch admin auctions from backend. Falling back to mock data.", error);
+    return mockAuctions;
   }
 }
 
@@ -226,6 +279,7 @@ export async function fetchAuctionById(id: string): Promise<Auction | null> {
       title: data.title || 'Untitled Auction',
       description: data.description || 'Direct from PostgreSQL database',
       imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600',
+      images: parseImages(data.images, data.imageUrl),
       currentBid: typeof data.currentBid === 'number' ? data.currentBid : (data.currentHighBid || 0),
       startingBid: typeof data.startingBid === 'number' ? data.startingBid : (data.currentHighBid || 0),
       endTime: data.endTime || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -307,18 +361,18 @@ export async function placeBid(auctionId: string, amount: number): Promise<BidRe
     mockBids[auctionId].unshift(newBid);
     auction.currentBid = amount;
 
-    // Anti-sniping: extend time if bid placed in last 15 seconds
+    // Action extension: if bid in last 60 sec of auction then extend time by 2 mins
     const timeRemaining = new Date(auction.endTime).getTime() - Date.now();
     let timeExtended = false;
 
-    if (timeRemaining < 15 * 1000 && timeRemaining > 0) {
-      auction.endTime = new Date(Date.now() + 30 * 1000).toISOString(); // Extend by 30 seconds
+    if (timeRemaining < 60 * 1000 && timeRemaining > 0) {
+      auction.endTime = new Date(new Date(auction.endTime).getTime() + 2 * 60 * 1000).toISOString(); // Extend by 2 minutes
       timeExtended = true;
     }
 
     return {
       success: true,
-      message: timeExtended ? 'Bid placed successfully! Time extended due to late bid.' : 'Bid placed successfully!',
+      message: timeExtended ? 'Bid placed successfully! Auction extended by 2 minutes.' : 'Bid placed successfully!',
       bid: newBid,
       timeExtended,
     };
@@ -459,7 +513,12 @@ export async function fetchWonAuctions(userId: string): Promise<Auction[]> {
     if (!response.ok) {
       throw new Error(`Failed to fetch won auctions`);
     }
-    return await response.json();
+    const data = await response.json();
+    return data.map((item: any) => ({
+      ...item,
+      id: String(item.id || item.auctionId),
+      images: parseImages(item.images, item.imageUrl)
+    }));
   } catch (error) {
     console.error("Could not fetch won auctions from database. Using mock fallback.", error);
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -478,7 +537,12 @@ export async function fetchUserSelling(userId: string): Promise<Auction[]> {
     if (!response.ok) {
       throw new Error(`Failed to fetch selling auctions`);
     }
-    return await response.json();
+    const data = await response.json();
+    return data.map((item: any) => ({
+      ...item,
+      id: String(item.id || item.auctionId),
+      images: parseImages(item.images, item.imageUrl)
+    }));
   } catch (error) {
     console.error("Could not fetch selling auctions from database. Using mock fallback.", error);
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -497,4 +561,216 @@ export async function fetchCategories(): Promise<string[]> {
 
   await new Promise(resolve => setTimeout(resolve, 100));
   return ['All', 'Electronics', 'Fashion', 'Music', 'Gaming', 'Furniture', 'Art', 'Sports'];
+}
+
+/**
+ * PUT /api/auctions/:id/close
+ * Force-close an auction by ID (Admin-only action)
+ */
+export async function closeAuction(auctionId: string): Promise<any> {
+  const email = localStorage.getItem("email");
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/close`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.message || 'Failed to close auction');
+  }
+  return await response.json();
+}
+
+/**
+ * GET /api/auctions/:id/audit
+ * Fetch the complete audit log (bid history) for an auction (Admin-only action)
+ */
+export async function fetchAuditLogs(auctionId: string): Promise<Bid[]> {
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/audit`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch audit logs');
+  }
+  return await response.json();
+}
+
+/**
+ * PUT /api/auctions/:id/approve
+ * Approve a pending auction by ID (Admin-only action)
+ */
+export async function approveAuction(auctionId: string): Promise<any> {
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/approve`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    throw new Error('Failed to approve auction');
+  }
+  return await response.json();
+}
+
+/**
+ * DELETE /api/auctions/delete/:id
+ * Delete an auction by ID (Admin/Seller action)
+ */
+export async function deleteAuction(auctionId: string): Promise<any> {
+  const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/delete/${auctionId}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete auction');
+  }
+  return await response.json();
+}
+
+/**
+ * POST /api/auctions/bids/:bidId/report
+ * Report a bid
+ */
+export async function reportBid(bidId: string, email: string): Promise<any> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/bids/${bidId}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || `Failed to report bid ${bidId}`);
+    }
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Could not connect to Spring Boot to report bid.`, error);
+    return { success: false, message: error.message || 'Failed to report bid.' };
+  }
+}
+
+/**
+ * GET /api/auctions/bids/reported
+ * Fetch all reported bids for Admin Dashboard
+ */
+export async function fetchReportedBids(): Promise<any[]> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/bids/reported`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch reported bids');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Could not connect to Spring Boot to fetch reported bids.`, error);
+    return [];
+  }
+}
+
+/**
+ * PUT /api/auctions/bids/:bidId/dismiss-report
+ * Dismiss a report on a bid
+ */
+export async function dismissBidReport(bidId: string): Promise<any> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/bids/${bidId}/dismiss-report`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to dismiss report');
+    }
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Could not connect to Spring Boot to dismiss report.`, error);
+    return { success: false, message: error.message || 'Failed to dismiss report.' };
+  }
+}
+
+/**
+ * DELETE /api/auctions/bids/:bidId
+ * Delete/void a reported bid
+ */
+export async function deleteBid(bidId: string): Promise<any> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/bids/${bidId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to delete bid');
+    }
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Could not connect to Spring Boot to delete bid.`, error);
+    return { success: false, message: error.message || 'Failed to delete bid.' };
+  }
+}
+
+/**
+ * POST /api/auctions/:id/report
+ * Report an auction
+ */
+export async function reportAuction(auctionId: string, email: string): Promise<any> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || `Failed to report auction ${auctionId}`);
+    }
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Could not connect to Spring Boot to report auction.`, error);
+    return { success: false, message: error.message || 'Failed to report auction.' };
+  }
+}
+
+/**
+ * PUT /api/auctions/:id/dismiss-report
+ * Dismiss report on an auction
+ */
+export async function dismissAuctionReport(auctionId: string): Promise<any> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/${auctionId}/dismiss-report`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      throw new Error('Failed to dismiss auction report');
+    }
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Could not connect to Spring Boot to dismiss auction report.`, error);
+    return { success: false, message: error.message || 'Failed to dismiss auction report.' };
+  }
+}
+
+/**
+ * GET /api/auctions/reported
+ * Fetch all reported auctions
+ */
+export async function fetchReportedAuctions(): Promise<Auction[]> {
+  try {
+    const response = await fetch(`${SPRING_BOOT_BASE_URL}/auctions/reported`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch reported auctions');
+    }
+    const data = await response.json();
+    return data.map((item: any) => ({
+      id: String(item.id || item.auctionId),
+      title: item.title || 'Untitled Auction',
+      description: item.description || 'Direct from PostgreSQL database',
+      imageUrl: item.imageUrl || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600',
+      images: parseImages(item.images, item.imageUrl),
+      currentBid: typeof item.currentBid === 'number' ? item.currentBid : (item.currentHighBid || 0),
+      startingBid: typeof item.startingBid === 'number' ? item.startingBid : (item.currentHighBid || 0),
+      endTime: item.endTime || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      category: item.category || 'General',
+      sellerId: item.sellerId || '1',
+      sellerName: item.sellerName || 'Unknown Seller',
+      status: item.status || 'active',
+      reported: true,
+    }));
+  } catch (error) {
+    console.error(`Could not connect to Spring Boot to fetch reported auctions.`, error);
+    return [];
+  }
 }

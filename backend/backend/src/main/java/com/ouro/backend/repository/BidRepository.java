@@ -10,4 +10,10 @@ public interface BidRepository extends JpaRepository<Bid, Long> {
     
     // Find bids placed by a specific user ordered by newest
     List<Bid> findByBidderOrderByBidIdDesc(com.ouro.backend.entity.User bidder);
+
+    List<Bid> findByAuctionAndBidder(Auction auction, com.ouro.backend.entity.User bidder);
+
+    List<Bid> findByReportedTrue();
+
+    List<Bid> findByAuctionOrderByAmountDesc(Auction auction);
 }

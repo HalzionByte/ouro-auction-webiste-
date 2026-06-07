@@ -7,6 +7,7 @@ import { CreateAuctionPage } from './pages/CreateAuctionPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { AdminDashboard } from './pages/AdminDashboard';
 
 export const router = createBrowserRouter([
   {
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
       {
         path: 'profile',
         Component: ProfilePage,
+      },
+      {
+        path: 'admin',
+        Component: AdminDashboard,
       },
     ],
   },

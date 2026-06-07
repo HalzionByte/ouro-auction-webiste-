@@ -1,13 +1,15 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Bid } from '../services/api';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Flag } from 'lucide-react';
 
 interface BidHistoryProps {
   bids: Bid[];
   currentUserId?: string;
+  auctionSellerId?: string;
+  onReport?: (bidId: string) => void;
 }
 
-export function BidHistory({ bids, currentUserId }: BidHistoryProps) {
+export function BidHistory({ bids, currentUserId, auctionSellerId, onReport }: BidHistoryProps) {
   if (bids.length === 0) {
     return (
       <motion.div
@@ -29,6 +31,7 @@ export function BidHistory({ bids, currentUserId }: BidHistoryProps) {
             <th className="text-left py-3 px-4 text-sm text-muted-foreground">Amount</th>
             <th className="text-left py-3 px-4 text-sm text-muted-foreground">Time</th>
             <th className="text-left py-3 px-4 text-sm text-muted-foreground">Status</th>
+            {currentUserId && <th className="text-right py-3 px-4 text-sm text-muted-foreground">Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -79,6 +82,27 @@ export function BidHistory({ bids, currentUserId }: BidHistoryProps) {
                       </motion.div>
                     )}
                   </td>
+                  {currentUserId && (
+                    <td className="py-3 px-4 text-right">
+                      {bid.reported ? (
+                        <span className="inline-flex items-center space-x-1 text-xs text-destructive font-medium bg-destructive/10 px-2 py-1 rounded">
+                          <Flag className="w-3 h-3 fill-destructive text-destructive" />
+                          <span>Reported</span>
+                        </span>
+                      ) : isCurrentUser || currentUserId === auctionSellerId ? (
+                        null
+                      ) : (
+                        <button
+                          onClick={() => onReport && onReport(bid.id)}
+                          className="inline-flex items-center space-x-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2 py-1 rounded border border-transparent hover:border-destructive/20 transition-all cursor-pointer font-medium"
+                          title="Report this bid"
+                        >
+                          <Flag className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          <span>Report</span>
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </motion.tr>
               );
             })}
