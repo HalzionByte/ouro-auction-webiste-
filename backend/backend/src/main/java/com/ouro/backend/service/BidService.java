@@ -8,6 +8,8 @@ import com.ouro.backend.repository.BidRepository;
 import com.ouro.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
+import java.time.Duration;
 
 @Service
 public class BidService {
@@ -52,6 +54,11 @@ public class BidService {
         );
 
         auction.setCurrentHighBid(bid.getAmount());
+
+        LocalDateTime now = LocalDateTime.now();
+        if (auction.getEndTime() != null && auction.getEndTime().isAfter(now) && Duration.between(now, auction.getEndTime()).getSeconds() < 60) {
+            auction.setEndTime(auction.getEndTime().plusMinutes(2));
+        }
 
         bidRepository.save(bid);
 

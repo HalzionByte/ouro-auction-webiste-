@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchAuctionById, fetchBidHistory, placeBid, fetchCurrentUser, approveAuction, deleteAuction, reportBid, reportAuction, closeAuction, Auction, Bid, User } from '../services/api';
+import { fetchAuctionById, fetchBidHistory, placeBid, fetchCurrentUser, approveAuction, deleteAuction, reportBid, reportAuction, closeAuction, cancelAuction, fetchWatchlist, addToWatchlist, removeFromWatchlist, Auction, Bid, User } from '../services/api';
 import { CountdownTimer } from '../components/CountdownTimer';
 import { BidHistory } from '../components/BidHistory';
 import { ArrowLeft, AlertCircle, CheckCircle, Clock, Flag } from 'lucide-react';
@@ -18,6 +18,8 @@ export function AuctionDetailPage() {
   // [ADDED BY ANTIGRAVITY] Local state to dynamically track if bidding is closed for this auction
   const [isEnded, setIsEnded] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+
 
   useEffect(() => {
     if (id) {
@@ -38,6 +40,12 @@ export function AuctionDetailPage() {
       setAuction(auctionData);
       setBids(bidsData);
       setCurrentUser(userData);
+
+      if (userData && userData.id && userData.id !== 'guest') {
+        const watchlistData = await fetchWatchlist(userData.id);
+        const inWatchlist = watchlistData.some((a) => String(a.id) === String(id));
+        setIsWatchlisted(inWatchlist);
+      }
 
       if (auctionData) {
         // [ADDED BY ANTIGRAVITY] Initialize isEnded based on database status and endTime past check
@@ -249,6 +257,42 @@ export function AuctionDetailPage() {
     }
   };
 
+  const handleCancelAuction = async () => {
+    if (!id) return;
+    if (!window.confirm(
+      "Are you sure you want to CANCEL this auction?\n\n" +
+      "• The auction will be marked as cancelled.\n" +
+      "• ALL bidders will receive a full refund immediately.\n\n" +
+      "This action cannot be undone."
+    )) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await cancelAuction(id);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          message: res.message || 'Auction cancelled and all bids refunded.',
+        });
+        await loadAuctionData();
+      } else {
+        setNotification({
+          type: 'error',
+          message: res.message || 'Failed to cancel auction.',
+        });
+      }
+    } catch (error: any) {
+      setNotification({
+        type: 'error',
+        message: error.message || 'Failed to cancel auction. Please try again.',
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
   const handleReportBid = async (bidId: string) => {
     if (!currentUser || !currentUser.email) {
       setNotification({
@@ -318,6 +362,60 @@ export function AuctionDetailPage() {
       });
     } finally {
       setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  const handleToggleWatchlist = async () => {
+    if (!currentUser || !currentUser.email || currentUser.id === 'guest') {
+      setNotification({
+        type: 'error',
+        message: 'Please login first to manage your watchlist.',
+      });
+      return;
+    }
+
+    if (!id) return;
+
+    setLoading(true);
+    try {
+      if (isWatchlisted) {
+        const res = await removeFromWatchlist(currentUser.id, id);
+        if (res.success) {
+          setIsWatchlisted(false);
+          setNotification({
+            type: 'success',
+            message: 'Removed from watchlist successfully.',
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            message: res.message || 'Failed to remove from watchlist.',
+          });
+        }
+      } else {
+        const res = await addToWatchlist(currentUser.id, id);
+        if (res.success) {
+          setIsWatchlisted(true);
+          setNotification({
+            type: 'success',
+            message: 'Added to watchlist successfully.',
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            message: res.message || 'Failed to add to watchlist.',
+          });
+        }
+      }
+      await loadAuctionData();
+    } catch (error: any) {
+      setNotification({
+        type: 'error',
+        message: error.message || 'Failed to update watchlist.',
+      });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setNotification(null), 4000);
     }
   };
 
@@ -451,21 +549,48 @@ export function AuctionDetailPage() {
               <div className="text-sm text-muted-foreground mb-1">{auction.category}</div>
               <h1 className="text-3xl font-bold text-foreground mb-4">{auction.title}</h1>
             </div>
-            {/* Show report button to anyone EXCEPT the seller of this auction */}
-            {currentUser && currentUser.id !== auction.sellerId && (
-              <button
-                onClick={handleReportAuction}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                  auction.reported
-                    ? 'bg-destructive/10 text-destructive border-destructive/20 cursor-not-allowed'
-                    : 'bg-secondary text-muted-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/25'
-                }`}
-                disabled={auction.reported}
-              >
-                <Flag className="w-3.5 h-3.5" />
-                <span>{auction.reported ? 'Reported' : 'Report Listing'}</span>
-              </button>
-            )}
+            {/* Action buttons (Watchlist and Report) */}
+            <div className="flex gap-2 items-center">
+              {currentUser && currentUser.id !== 'guest' && (
+                <button
+                  id="toggle-watchlist"
+                  onClick={handleToggleWatchlist}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                    isWatchlisted
+                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20'
+                      : 'bg-secondary text-muted-foreground border-border hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/25'
+                  }`}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill={isWatchlisted ? "currentColor" : "none"}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="w-3.5 h-3.5"
+                  >
+                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                  </svg>
+                  <span>{isWatchlisted ? 'Watchlisted' : 'Watchlist'}</span>
+                </button>
+              )}
+
+              {/* Show report button to anyone EXCEPT the seller of this auction */}
+              {currentUser && currentUser.id !== auction.sellerId && (
+                <button
+                  onClick={handleReportAuction}
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                    auction.reported
+                      ? 'bg-destructive/10 text-destructive border-destructive/20 cursor-not-allowed'
+                      : 'bg-secondary text-muted-foreground border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/25'
+                  }`}
+                  disabled={auction.reported}
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  <span>{auction.reported ? 'Reported' : 'Report Listing'}</span>
+                </button>
+              )}
+            </div>
           </div>
 
             <div className="bg-secondary rounded-xl p-6 space-y-4">
@@ -534,14 +659,29 @@ export function AuctionDetailPage() {
                   <div className="p-4 bg-secondary/35 border border-border rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-3">
                     <Clock className="w-6 h-6 text-primary animate-pulse" />
                     <p className="font-semibold text-foreground text-sm">You are the seller of this auction</p>
-                    <p className="text-xs text-muted-foreground mb-1">As the seller, you cannot bid on this item. You can choose to end this auction early.</p>
-                    <button
-                      onClick={handleEndAuction}
-                      disabled={loading}
-                      className="w-full bg-accent text-accent-foreground py-2.5 rounded-lg font-medium hover:bg-accent/90 transition-colors shadow-sm text-sm cursor-pointer"
-                    >
-                      {loading ? 'Ending Auction...' : 'End Auction Early'}
-                    </button>
+                    <p className="text-xs text-muted-foreground mb-1">As the seller, you cannot bid on this item. Choose an action below:</p>
+                    <div className="flex flex-col gap-2 w-full">
+                      <button
+                        id={`end-auction-${id}`}
+                        onClick={handleEndAuction}
+                        disabled={loading}
+                        className="w-full bg-accent text-accent-foreground py-2.5 rounded-lg font-medium hover:bg-accent/90 transition-colors shadow-sm text-sm cursor-pointer"
+                      >
+                        {loading ? 'Processing...' : '⏱ End Auction Early'}
+                      </button>
+                      <button
+                        id={`cancel-auction-${id}`}
+                        onClick={handleCancelAuction}
+                        disabled={loading}
+                        className="w-full bg-destructive/10 text-destructive border border-destructive/30 py-2.5 rounded-lg font-medium hover:bg-destructive/20 transition-colors shadow-sm text-sm cursor-pointer"
+                      >
+                        {loading ? 'Processing...' : '✕ Cancel Auction & Refund All'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground/70 mt-1">
+                      <strong>End Early</strong> finalizes the highest bidder as winner.<br/>
+                      <strong>Cancel</strong> refunds every bidder in full.
+                    </p>
                   </div>
                 ) : currentUser?.role === 'ADMIN' ? (
                   <div className="p-4 bg-destructive/15 border border-destructive/20 rounded-xl text-center shadow-inner flex flex-col items-center justify-center gap-2">

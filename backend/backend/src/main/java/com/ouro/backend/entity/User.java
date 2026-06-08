@@ -9,6 +9,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.JoinTable;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.UUID;
@@ -41,6 +43,15 @@ public class User {
     @OneToMany(mappedBy = "bidder", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<Bid> bids = new ArrayList<>();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "user_watchlist",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "auction_id")
+    )
+    @JsonIgnore
+    private List<Auction> watchlist = new ArrayList<>();
 
     public User() {
     }
@@ -108,5 +119,13 @@ public class User {
 
     public void setBids(List<Bid> bids) {
         this.bids = bids;
+    }
+
+    public List<Auction> getWatchlist() {
+        return watchlist;
+    }
+
+    public void setWatchlist(List<Auction> watchlist) {
+        this.watchlist = watchlist;
     }
 }
